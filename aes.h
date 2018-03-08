@@ -12,15 +12,23 @@
 #define AES_SUCCESS	0
 #define AES_ERROR	-1
 
-typedef unsigned char      uint8_t;
+typedef unsigned char	uint8_t;
 
-extern int aes_cipher_data(uint8_t *in, size_t in_len, uint8_t *out, uint8_t *key, size_t key_len);
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-extern int aes_decipher_data(uint8_t *in, size_t in_len, uint8_t *out, size_t *out_len, uint8_t *key, size_t key_len);
+int aes_cipher_data(uint8_t *in, size_t in_len, uint8_t *out, uint8_t *key, size_t key_len);
 
-extern int aes_cipher_file(const char *in_filename, const char *out_filename, uint8_t *key, size_t key_len);
+int aes_decipher_data(uint8_t *in, size_t in_len, uint8_t *out, size_t *out_len, uint8_t *key, size_t key_len);
 
-extern int aes_decipher_file(const char *in_filename, const char *out_filename, uint8_t *key, size_t key_len);
+int aes_cipher_file(const char *in_filename, const char *out_filename, uint8_t *key, size_t key_len);
+
+int aes_decipher_file(const char *in_filename, const char *out_filename, uint8_t *key, size_t key_len);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* !_AES_H_ */
 

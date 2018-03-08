@@ -41,6 +41,8 @@ void byteReverse(unsigned char *buf, unsigned longs)
 }
 #endif
 
+void MD5Transform(u_int32_t buf[4], u_int32_t const in[16]);
+
 /*
  * Start MD5 accumulation.  Set bit count to 0 and buffer to mysterious
  * initialization constants.
@@ -269,8 +271,8 @@ MD5End(MD5_CTX *ctx, char *buf)
 	return buf;
 }
 
-char *
-MD5File(const char *filename, char *buf)
+
+void MD5File(const char *filename, unsigned char *digest)
 {
 	unsigned char buffer[BUFSIZ];
 	MD5_CTX ctx;
@@ -278,23 +280,33 @@ MD5File(const char *filename, char *buf)
 
 	MD5Init(&ctx);
 	f = open(filename, O_RDONLY);
-	if (f < 0) return 0;
-	while ((i = read(f, buffer, sizeof buffer)) > 0) {
+	if (f < 0)
+	{
+		perror("open failed!");
+		return;
+	}
+
+	while ((i = read(f, buffer, sizeof buffer)) > 0) 
+	{
 		MD5Update(&ctx, buffer, i);
 	}
+
 	j = errno;
 	close(f);
 	errno = j;
-	if (i < 0) return 0;
-	return MD5End(&ctx, buf);
+	if (i < 0)
+	{
+		perror("read failed!");
+		return;
+	}
+	MD5End(&ctx, digest);
 }
 
-char *
-MD5Data(const unsigned char *data, unsigned int len, char *buf)
+void MD5Data(const unsigned char *data, unsigned int len, unsigned char *digest)
 {
 	MD5_CTX ctx;
 
 	MD5Init(&ctx);
 	MD5Update(&ctx, data, len);
-	return MD5End(&ctx, buf);
+	MD5End(&ctx, digest);
 }
