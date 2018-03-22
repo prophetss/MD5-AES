@@ -501,8 +501,6 @@ int aes_cipher_data(uint8_t *in, size_t in_len, uint8_t *out, uint8_t *key, size
 
 	cipher(padding_bit, out + quotient, w);
 
-	free(w);
-	w = NULL;
 	return AES_SUCCESS;
 }
 
@@ -524,8 +522,6 @@ int aes_decipher_data(uint8_t *in, size_t in_len, uint8_t *out, size_t *out_len,
 	for (i = 1; i <= j; i++)
 		out[in_len - i] = '\0';
 
-	free(w);
-	w = NULL;
 	return AES_SUCCESS;
 }
 
@@ -539,7 +535,7 @@ int aes_cipher_file(const char *in_filename, const char *out_filename, uint8_t *
 	int fi, fo, i;
 
 
-	fi = open(in_filename, O_RDONLY | _O_BINARY | _O_BINARY);
+	fi = open(in_filename, O_RDONLY | _O_BINARY);
 	fo = open(out_filename, O_WRONLY | O_CREAT | O_APPEND | _O_BINARY);
 
 	if (fi < 0 || fo < 0)
@@ -558,8 +554,7 @@ int aes_cipher_file(const char *in_filename, const char *out_filename, uint8_t *
 		if (write(fo, bufferout, AES_BUFSIZ) != AES_BUFSIZ)
 			return AES_ERROR;
 	}
-	free(w);
-	w = NULL;
+
 	return AES_SUCCESS;
 }
 
@@ -589,7 +584,6 @@ int aes_decipher_file(const char *in_filename, const char *out_filename, uint8_t
 #else
 	chsize(fo, (j << 4) - bufferout[AES_BUFSIZ - 1]);
 #endif
-	free(w);
-	w = NULL;
+
 	return AES_SUCCESS;
 }
