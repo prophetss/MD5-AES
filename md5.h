@@ -15,8 +15,18 @@ typedef struct MD5Context {
 	unsigned char in[64];
 } MD5_CTX;
 
+/**
+* @param filename - filename.
+* @param digest - a reference, hexadecimal notation.
+*/
 void MD5File(const char *filename, unsigned char *digest);
 
+
+/**
+* @param data - message.
+* @param len - message length
+* @param digest - a reference, hexadecimal notation.
+*/
 void MD5Data(const unsigned char *data, unsigned int len, unsigned char *digest);
 
 #ifdef __cplusplus

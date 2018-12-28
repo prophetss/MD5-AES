@@ -16,9 +16,8 @@
  */
 
 #include <stdio.h>
-#include <fcntl.h>
+#include <stdlib.h>
 #include <string.h>		/* for memcpy() */
-#include <errno.h>
 #include "md5.h"
 
 #if __BYTE_ORDER == 1234
@@ -251,55 +250,30 @@ void MD5Transform(u_int32_t buf[4], u_int32_t const in[16])
     buf[3] += d;
 }
 
-char *
-MD5End(MD5_CTX *ctx, char *buf)
-{
-	int i;
-	unsigned char digest[MD5_HASHBYTES];
-	static const char hex[] = "0123456789abcdef";
-
-	if (!buf)
-		buf = malloc(33);
-	if (!buf)
-		return 0;
-	MD5Final(digest, ctx);
-	for (i = 0; i<MD5_HASHBYTES; i++) {
-		buf[i + i] = hex[digest[i] >> 4];
-		buf[i + i + 1] = hex[digest[i] & 0x0f];
-	}
-	buf[i + i] = '\0';
-	return buf;
-}
-
-
 void MD5File(const char *filename, unsigned char *digest)
 {
-	unsigned char buffer[BUFSIZ];
 	MD5_CTX ctx;
-	int f, i, j;
 
 	MD5Init(&ctx);
-	f = open(filename, O_RDONLY);
-	if (f < 0)
-	{
+
+	FILE *f;
+	f = fopen(filename, "rb");
+	if (!f) {
 		perror("open failed!");
 		return;
 	}
 
-	while ((i = read(f, buffer, sizeof buffer)) > 0) 
-	{
-		MD5Update(&ctx, buffer, i);
+	unsigned char buffer[BUFSIZ];
+	size_t i;
+	while (1) {
+		i = fread(buffer, 1, BUFSIZ, f);
+		if (i == 0) break;
+		MD5Update(&ctx, buffer, (unsigned int)i);
 	}
 
-	j = errno;
-	close(f);
-	errno = j;
-	if (i < 0)
-	{
-		perror("read failed!");
-		return;
-	}
-	MD5End(&ctx, digest);
+	fclose(f);
+
+	MD5Final(digest, &ctx);
 }
 
 void MD5Data(const unsigned char *data, unsigned int len, unsigned char *digest)
@@ -308,5 +282,5 @@ void MD5Data(const unsigned char *data, unsigned int len, unsigned char *digest)
 
 	MD5Init(&ctx);
 	MD5Update(&ctx, data, len);
-	MD5End(&ctx, digest);
+	MD5Final(digest, &ctx);
 }

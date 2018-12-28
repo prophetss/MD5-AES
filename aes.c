@@ -5,17 +5,16 @@
  *
  * Based on the document FIPS PUB 197
  */
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
-#include <fcntl.h>
-#include <sys/stat.h>
+#include <sys/stat.h>	//for struct stat
 #include "aes.h"
 
-#if defined(__linux__) || defined(__linux)
-#include <unistd.h>
-#define _O_BINARY	0
-#endif
+
+
+/* out buffer length */
+#define AES_BUFSIZ	16
 
 
 /*
@@ -81,16 +80,12 @@ void coef_mult(uint8_t *a, uint8_t *b, uint8_t *d) {
 	d[3] = gmult(a[3],b[0])^gmult(a[2],b[1])^gmult(a[1],b[2])^gmult(a[0],b[3]);
 }
 
-/*
- * The cipher Key.	
- */
-int K;
 
 /*
  * Number of columns (32-bit words) comprising the State. For this 
  * standard, Nb = 4.
  */
-int Nb = 4;
+#define  Nb		4
 
 /*
  * Number of 32-bit words comprising the Cipher Key. For this 
@@ -171,10 +166,10 @@ uint8_t * Rcon(uint8_t i) {
 }
 
 /*
- * Transformation in the Cipher and Inverse Cipher in which a Round 
- * Key is added to the State using an XOR operation. The length of a 
- * Round Key equals the size of the State (i.e., for Nb = 4, the Round 
- * Key length equals 128 bits/16 bytes).
+* Transformation in the Cipher and Inverse Cipher in which a Round
+* Key is added to the State using an XOR operation. The length of a
+* Round Key equals the size of the State (i.e., for Nb = 4, the Round
+* Key length equals 128 bits/16 bytes).
  */
 void add_round_key(uint8_t *state, uint8_t *w, uint8_t r) {
 	
@@ -353,7 +348,7 @@ void rot_word(uint8_t *w) {
 /*
  * Key Expansion
  */
-void key_expansion(uint8_t *key, uint8_t *w) {
+void key_expansion(const uint8_t *key, uint8_t *w) {
 
 	uint8_t tmp[4];
 	uint8_t i;
@@ -391,11 +386,10 @@ void key_expansion(uint8_t *key, uint8_t *w) {
 	}
 }
 
-/*int Nb=4, for  compile error*/
-#define NB_T	4
-void cipher(uint8_t *in, uint8_t *out, uint8_t *w) {
 
-	uint8_t state[4* NB_T];
+void cipher(const uint8_t *in, uint8_t *out, uint8_t *w) {
+
+	uint8_t state[4* Nb];
 	uint8_t r, i, j;
 
 	for (i = 0; i < 4; i++) {
@@ -424,9 +418,9 @@ void cipher(uint8_t *in, uint8_t *out, uint8_t *w) {
 	}
 }
 
-void inv_cipher(uint8_t *in, uint8_t *out, uint8_t *w) {
+void inv_cipher(const uint8_t *in, uint8_t *out, uint8_t *w) {
 
-	uint8_t state[4* NB_T];
+	uint8_t state[4* Nb];
 	uint8_t r, i, j;
 
 	for (i = 0; i < 4; i++) {
@@ -454,18 +448,11 @@ void inv_cipher(uint8_t *in, uint8_t *out, uint8_t *w) {
 		}
 	}
 }
-/* 文件尾部将加密补位数据截断 */
-static void file_tail_truncate(int fo, uint8_t len)
-{
-	ftruncate(fo, len);
-}
 
-/* 密钥初始化 */
-static int aes_init(uint8_t *key, size_t key_len, uint8_t **w)
-{
-	if (*w != NULL)
-		return AES_SUCCESS;
 
+/* key initialization */
+static void aes_init(const uint8_t *key, size_t key_len, uint8_t **w)
+{
 	switch (key_len) {
 	default:
 	case 16: Nk = 4; Nr = 10; break;
@@ -474,116 +461,153 @@ static int aes_init(uint8_t *key, size_t key_len, uint8_t **w)
 	}
 
 	*w = malloc(Nb*(Nr + 1) * 4);
+	assert(*w != NULL);
+	
 	key_expansion(key, *w);
-
-	return AES_SUCCESS;
 }
 
 
-int aes_cipher_data(uint8_t *in, size_t in_len, uint8_t *out, uint8_t *key, size_t key_len)
+void aes_cipher_data(const uint8_t *in, size_t in_len, uint8_t *out, const uint8_t *key, size_t key_len)
 {
-	size_t quotient = in_len >> 4;
 	uint8_t *w = NULL; // expanded key
 	aes_init(key, key_len, &w);
+
+	size_t quotient = in_len >> 4;
 	size_t i;
 	for (i = 0; i < quotient; i++)
 		cipher(in + i * 4 * Nb, out + i * 4 * Nb, w);
 
-	/* 结尾填充组，单独处理 */
-	uint8_t padding_bit[4 * NB_T];
+	/* At the end of padding */
+	uint8_t padding_bit[4 * Nb];
 	uint8_t j = 0;
 	quotient = quotient << 4;
 	for (i = quotient; i < in_len; i++, j++)
 		padding_bit[i - quotient] = in[i];
-
 	for (i = j; i < 4 * Nb; i++)
 		padding_bit[i] = 4 * Nb - j;
-
 	cipher(padding_bit, out + quotient, w);
 
-	return AES_SUCCESS;
+	free(w);
 }
 
-int aes_decipher_data(uint8_t *in, size_t in_len, uint8_t *out, size_t *out_len, uint8_t *key, size_t key_len)
+void aes_decipher_data(const uint8_t *in, size_t in_len, uint8_t *out, size_t *out_len, const uint8_t *key, size_t key_len)
 {
-	size_t quotient = in_len >> 4;
+	if (in_len % AES_BUFSIZ != 0) {
+		fprintf(stderr, "input length error!\n");
+		return;
+	}
+
 	uint8_t *w = NULL; // expanded key
 	aes_init(key, key_len, &w);
+
+	size_t quotient = in_len >> 4;
 	size_t i;
 	for (i = 0; i < quotient; i++)
 		inv_cipher(in + i * 4 * Nb, out + i * 4 * Nb, w);
 
-	/* 补位长度 */
+	/* padding length */
 	uint8_t j = out[in_len -1];
 
-	/* 实际有效数据长度 */
+	/* actual length */
 	*out_len = in_len - j;
-
-	for (i = 1; i <= j; i++)
-		out[in_len - i] = '\0';
-
-	return AES_SUCCESS;
+	
+	free(w);
 }
 
-int aes_cipher_file(const char *in_filename, const char *out_filename, uint8_t *key, size_t key_len)
+int aes_cipher_file(const char *in_filename, const char *out_filename, const uint8_t *key, size_t key_len)
 {
+	FILE *fi, *fo;
+	if ((fi = fopen(in_filename, "rb")) == NULL) {
+		perror("Failed to open the in file\n");
+		return 1;
+	}
+
+	if ((fo = fopen(out_filename, "wb+")) == NULL) {
+		fclose(fi);
+		perror("Failed to open the out file\n");
+		return 1;
+	}
+
 	uint8_t *w = NULL; // expanded key
 	aes_init(key, key_len, &w);
 
-	uint8_t bufferin[AES_BUFSIZ], bufferout[AES_BUFSIZ];
-
-	int fi, fo, i;
-
-
-	fi = open(in_filename, O_RDONLY | _O_BINARY);
-	fo = open(out_filename, O_WRONLY | O_CREAT | O_APPEND | _O_BINARY);
-
-	if (fi < 0 || fo < 0)
-		return AES_ERROR;
-
-	while ((i = read(fi, bufferin, AES_BUFSIZ)) >= 0)
-	{
-		if (i < AES_BUFSIZ)	/*读取结束*/
-		{
-			aes_cipher_data(bufferin, i, bufferout, key, key_len);
-			if (write(fo, bufferout, AES_BUFSIZ) != AES_BUFSIZ)
-				return AES_ERROR;
-			break;
-		}
-		cipher(bufferin, bufferout, w);
-		if (write(fo, bufferout, AES_BUFSIZ) != AES_BUFSIZ)
-			return AES_ERROR;
+	uint8_t buffer[AES_BUFSIZ];
+	size_t rlen, wlen;
+	while (1) {
+		rlen = fread(buffer, 1, AES_BUFSIZ, fi);
+		assert(rlen <= AES_BUFSIZ);
+		if (rlen == 0) break;
+		if (rlen < AES_BUFSIZ)	/*ending*/
+			aes_cipher_data(buffer, rlen, buffer, key, key_len);
+		else
+			cipher(buffer, buffer, w);
+		wlen = fwrite(buffer, 1, AES_BUFSIZ, fo);
+		assert(wlen == AES_BUFSIZ);
 	}
 
-	return AES_SUCCESS;
+	fclose(fi);
+	fclose(fo);
+	free(w);
+	
+	return 0;
 }
 
-int aes_decipher_file(const char *in_filename, const char *out_filename, uint8_t *key, size_t key_len)
-{
-	uint8_t *w = NULL; // expanded key
-	aes_init(key, key_len, &w);
-
-	uint8_t bufferin[AES_BUFSIZ], bufferout[AES_BUFSIZ];
-
-	int fi, fo, i, j = 0;
-	fi = open(in_filename, O_RDONLY | _O_BINARY | _O_BINARY);
-	fo = open(out_filename, O_WRONLY | O_CREAT | O_APPEND | _O_BINARY);
-	if (fi < 0 || fo < 0)
-		return AES_ERROR;
-
-	while ((i = read(fi, bufferin, AES_BUFSIZ)) == AES_BUFSIZ)
-	{
-		j++;
-		inv_cipher(bufferin, bufferout, w);
-		if (write(fo, bufferout, AES_BUFSIZ) != AES_BUFSIZ)
-			return AES_ERROR;
-	}
-
-#if defined(__linux__) || defined(__linux)
-	ftruncate(fo, (j << 4) - bufferout[AES_BUFSIZ - 1]);
-#else
-	chsize(fo, (j << 4) - bufferout[AES_BUFSIZ - 1]);
+#if !defined(S_ISREG)
+#  define S_ISREG(x) (((x) & S_IFMT) == S_IFREG)
 #endif
 
-	return AES_SUCCESS;
+static size_t get_file_size(const char *filename)
+{
+	int ret;
+	struct stat sbuf;
+	ret = stat(filename, &sbuf);
+	if (ret || !S_ISREG(sbuf.st_mode)) return 0;
+	return (size_t)sbuf.st_size;
+}
+
+int aes_decipher_file(const char *in_filename, const char *out_filename, const uint8_t *key, size_t key_len)
+{
+	size_t flen = get_file_size(in_filename);
+	if (flen == 0 || flen % AES_BUFSIZ != 0) {
+		fprintf(stderr, "in file error!\n");
+		return 1;
+	}
+
+	FILE *fi, *fo;
+	if ((fi = fopen(in_filename, "rb")) == NULL) {
+		perror("Failed to open the in file\n");
+		return 1;
+	}
+	
+	if ((fo = fopen(out_filename, "wb+")) == NULL) {
+		fclose(fi);
+		perror("Failed to open the out file\n");
+		return 1;
+	}
+
+	uint8_t *w = NULL; // expanded key
+	aes_init(key, key_len, &w);
+
+	uint8_t buffer[AES_BUFSIZ];
+	size_t rlen, wlen;
+	while (1) {
+		rlen = fread(buffer, 1, AES_BUFSIZ, fi);
+		assert(rlen == AES_BUFSIZ);
+		inv_cipher(buffer, buffer, w);
+		flen -= AES_BUFSIZ;
+		if (flen == 0) break;
+		wlen = fwrite(buffer, 1, AES_BUFSIZ, fo);
+		assert(wlen == AES_BUFSIZ);
+	}
+
+	/* actual length of ending */
+	const uint8_t actlen = (uint8_t)AES_BUFSIZ - buffer[AES_BUFSIZ - 1];
+	wlen = fwrite(buffer, 1, actlen, fo);
+	assert(wlen == actlen);
+
+	fclose(fi);
+	fclose(fo);
+	free(w);
+
+	return 0;
 }
